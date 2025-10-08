@@ -52,6 +52,7 @@ class ConnectionManager:
     ):
         """Send message to all chat participants except the sender."""
         participants = get_chat_members(db, chat_id)
+        logger.info(f"Broadcasting to chat {chat_id} participants: {participants}")
         for user_id in participants:
             if user_id == sender_id:
                 continue
