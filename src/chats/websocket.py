@@ -1,5 +1,4 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 from typing import Dict, List
 import json
 
@@ -49,12 +48,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-@app.get("/")
-async def get():
-    return HTMLResponse("<h1>FastAPI WebSocket 1-to-1 Chat</h1>")
-
-
-@app.websocket("/ws/{user_id}")
+@router.websocket("/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(user_id, websocket)
     try:
