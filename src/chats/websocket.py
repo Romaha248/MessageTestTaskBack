@@ -4,27 +4,23 @@ from datetime import datetime, timezone
 from typing import Dict, List
 from uuid import UUID
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.orm import Session
-
-from src.chats.service import get_chat_members
-from src.database.dbcore import get_db
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
 
 class ConnectionManager:
-    """Manages WebSocket connections and broadcasts messages."""
+    """Manages WebSocket connections, message history, and broadcasts."""
 
     def __init__(self):
         self.active_connections: Dict[UUID, WebSocket] = {}
-        self.message_history: Dict[UUID, List[dict]] = {}  # per chat history
-        self.max_history = 50  # store up to 50 messages per chat
+        self.chat_participants: Dict[UUID, List[UUID]] = {}  # chat_id -> user_ids
+        self.message_history: Dict[UUID, List[dict]] = {}  # chat_id -> messages
+        self.max_history = 50
 
+    # ----------------- Connection Handling -----------------
     async def connect(self, user_id: UUID, websocket: WebSocket):
-        """Accept connection and register user."""
         await websocket.accept()
         self.active_connections[user_id] = websocket
         logger.info(
@@ -32,14 +28,36 @@ class ConnectionManager:
         )
 
     def disconnect(self, user_id: UUID):
-        """Remove user from connections."""
         self.active_connections.pop(user_id, None)
         logger.info(
             f"User {user_id} disconnected. Remaining connections: {len(self.active_connections)}"
         )
 
+    # ----------------- Chat Participant Handling -----------------
+    def register_chat(self, chat_id: UUID, participants: List[UUID]):
+        """Register chat participants in memory."""
+        self.chat_participants[chat_id] = participants
+        logger.info(f"Registered chat {chat_id} participants: {participants}")
+
+    # ----------------- Message History -----------------
+    def store_message(self, chat_id: UUID, message: dict):
+        if chat_id not in self.message_history:
+            self.message_history[chat_id] = []
+        self.message_history[chat_id].append(message)
+        # Keep only last `max_history` messages
+        if len(self.message_history[chat_id]) > self.max_history:
+            self.message_history[chat_id] = self.message_history[chat_id][
+                -self.max_history :
+            ]
+
+    async def send_chat_history(self, websocket: WebSocket, chat_id: UUID):
+        if chat_id in self.message_history:
+            await websocket.send_json(
+                {"type": "history", "messages": self.message_history[chat_id]}
+            )
+
+    # ----------------- Messaging -----------------
     async def send_personal_message(self, user_id: UUID, message: dict):
-        """Send message to a specific user if online."""
         ws = self.active_connections.get(user_id)
         if ws:
             try:
@@ -47,66 +65,42 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"Failed to send personal message to {user_id}: {e}")
 
-    async def broadcast_to_chat(
-        self, chat_id: UUID, sender_id: UUID, message: dict, db: Session
-    ):
-        participants = get_chat_members(db, chat_id)
+    async def broadcast_to_chat(self, chat_id: UUID, sender_id: UUID, message: dict):
+        participants = self.chat_participants.get(chat_id, [])
+        logger.info(
+            f"Broadcasting message in chat {chat_id} to participants: {participants}"
+        )
         logger.info(f"Active connections: {list(self.active_connections.keys())}")
-        logger.info(f"Chat participants: {participants}")
 
         for user_id in participants:
-            if str(user_id) == str(sender_id):
+            if user_id == sender_id:
                 continue
-
-            ws = self.active_connections.get(
-                UUID(str(user_id))
-            ) or self.active_connections.get(user_id)
+            ws = self.active_connections.get(user_id)
             if ws:
                 try:
                     await ws.send_json(message)
                     logger.info(f"✅ Sent to {user_id}")
-                    logger.info(
-                        f"Sending to user {user_id} (connected={user_id in self.active_connections})"
-                    )
                 except Exception as e:
-                    logger.error(f"Error sending to user {user_id}: {e}")
+                    logger.error(f"Error sending to {user_id}: {e}")
             else:
                 logger.info(f"❌ User {user_id} not connected")
 
-    def store_message(self, chat_id: UUID, message: dict):
-        """Keep a limited message history per chat."""
-        if chat_id not in self.message_history:
-            self.message_history[chat_id] = []
-        self.message_history[chat_id].append(message)
-        if len(self.message_history[chat_id]) > self.max_history:
-            self.message_history[chat_id] = self.message_history[chat_id][
-                -self.max_history :
-            ]
 
-    async def send_chat_history(self, websocket: WebSocket, chat_id: UUID):
-        """Send previous messages to a user who just connected."""
-        if chat_id in self.message_history:
-            await websocket.send_json(
-                {
-                    "type": "history",
-                    "messages": self.message_history[chat_id],
-                }
-            )
-
-
+# ----------------- Global Connection Manager -----------------
 connection_manager = ConnectionManager()
 
 
+# ----------------- WebSocket Endpoint -----------------
 @router.websocket("/{user_id}")
-async def websocket_endpoint(
-    websocket: WebSocket, user_id: UUID, db: Session = Depends(get_db)
-):
-    """Main WebSocket handler for user messaging."""
+async def websocket_endpoint(websocket: WebSocket, user_id: UUID):
+    """
+    WebSocket handler for messaging.
+    Expects messages in JSON format: {"chat_id": "...", "content": "..."}
+    """
     await connection_manager.connect(user_id, websocket)
     try:
         while True:
             data_text = await websocket.receive_text()
-
             try:
                 data = json.loads(data_text)
                 chat_id = UUID(data["chat_id"])
@@ -125,20 +119,20 @@ async def websocket_endpoint(
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
-            # Store message
+            # Store in memory
             connection_manager.store_message(chat_id, message)
 
             # Send confirmation to sender
             await connection_manager.send_personal_message(user_id, message)
 
-            # Broadcast to chat participants
+            # Broadcast to other chat participants
             await connection_manager.broadcast_to_chat(
-                chat_id, sender_id=user_id, message=message, db=db
+                chat_id, sender_id=user_id, message=message
             )
 
     except WebSocketDisconnect:
         connection_manager.disconnect(user_id)
         logger.info(f"WebSocket disconnected: {user_id}")
     except Exception as e:
-        logger.error(f"Unexpected WebSocket error ({user_id}): {e}")
+        logger.exception(f"Unexpected WebSocket error ({user_id}): {e}")
         connection_manager.disconnect(user_id)
