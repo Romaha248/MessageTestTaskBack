@@ -123,7 +123,7 @@ def create_message(db: Session, message_request: MessageRequest) -> MessageRespo
         )
 
 
-def get_chat_members(db: Session, chat_id: UUID) -> ChatResponse:
+def get_chat_members(db: Session, chat_id: UUID) -> list:
     try:
         chat = db.query(Chats).filter(Chats.id == chat_id).first()
 
@@ -133,7 +133,7 @@ def get_chat_members(db: Session, chat_id: UUID) -> ChatResponse:
                 detail="Chat not found.",
             )
 
-        return chat
+        return [chat.user1_id, chat.user2_id]
     except Exception as e:
         logging.error(f"Error retrieving chat : {e}")
         raise HTTPException(

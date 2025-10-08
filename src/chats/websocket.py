@@ -50,9 +50,9 @@ class ConnectionManager:
     async def broadcast_to_chat(
         self, chat_id: UUID, sender_id: UUID, message: dict, db: Session
     ):
-        """Send message to all chat participants except the sender."""
         participants = get_chat_members(db, chat_id)
         logger.info(f"Broadcasting to chat {chat_id} participants: {participants}")
+
         for user_id in participants:
             if user_id == sender_id:
                 continue
@@ -60,8 +60,11 @@ class ConnectionManager:
             if ws:
                 try:
                     await ws.send_json(message)
+                    logger.info(f"✅ Sent to {user_id}")
                 except Exception as e:
                     logger.error(f"Error sending to user {user_id}: {e}")
+            else:
+                logger.info(f"❌ User {user_id} not connected")
 
     def store_message(self, chat_id: UUID, message: dict):
         """Keep a limited message history per chat."""
