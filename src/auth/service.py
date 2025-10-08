@@ -9,7 +9,7 @@ from starlette import status
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 import jwt
-from jwt.exceptions import PyJWTError
+from jwt import InvalidTokenError
 from uuid import UUID
 from typing import Annotated
 from fastapi import Depends, HTTPException, Response
@@ -76,7 +76,7 @@ def verify_token(token: str) -> TokenData:
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
             )
         return TokenData(user_id=user_id, username=username)
-    except PyJWTError as e:
+    except InvalidTokenError as e:
         logging.warning(f"Token verification failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
