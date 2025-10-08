@@ -1,7 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from fastapi.responses import HTMLResponse
 from typing import Dict, List
 import json
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 from src.database.dbcore import get_db
@@ -14,11 +14,11 @@ router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.active_connections: Dict[UUID, WebSocket] = {}
         # chat_id -> list of user_ids
-        self.active_chats: Dict[str, List[str]] = {}
+        self.active_chats: Dict[UUID, List[UUID]] = {}
 
-    async def connect(self, user_id: str, websocket: WebSocket, db: Session):
+    async def connect(self, user_id: UUID, websocket: WebSocket, db: Session):
         await websocket.accept()
         self.active_connections[user_id] = websocket
         print(f"User {user_id} connected")
@@ -26,23 +26,23 @@ class ConnectionManager:
         # Fetch all chats for this user from DB
         user_chats = get_user_chats(db, user_id)  # Returns list of chat objects
         for chat in user_chats:
-            chat_id = str(chat.id)
             participants = [
-                str(u.id) for u in chat.users
+                chat.user1,
+                chat.user2,
             ]  # assuming chat.users is a list of User objects
-            self.active_chats[chat_id] = participants
+            self.active_chats[chat.id] = participants
 
-    def disconnect(self, user_id: str):
+    def disconnect(self, user_id: UUID):
         if user_id in self.active_connections:
             self.active_connections.pop(user_id)
             print(f"User {user_id} disconnected")
 
-    async def send_personal_message(self, message: str, user_id: str):
+    async def send_personal_message(self, message: str, user_id: UUID):
         websocket = self.active_connections.get(user_id)
         if websocket:
             await websocket.send_text(message)
 
-    async def send_message_to_chat(self, chat_id: str, message: dict, sender_id: str):
+    async def send_message_to_chat(self, chat_id: UUID, message: dict, sender_id: UUID):
         users = self.active_chats.get(chat_id, [])
         for user_id in users:
             if user_id in self.active_connections:
@@ -54,7 +54,7 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/{user_id}")
 async def websocket_endpoint(
-    websocket: WebSocket, user_id: str, db: Session = Depends(get_db)
+    websocket: WebSocket, user_id: UUID, db: Session = Depends(get_db)
 ):
     await manager.connect(user_id, websocket, db)
     try:
