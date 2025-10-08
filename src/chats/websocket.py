@@ -63,7 +63,7 @@ async def websocket_endpoint(
             try:
                 # Expected message: {"chat_id": "123", "content": "Hello"}
                 message_data = json.loads(data)
-                chat_id = message_data.get("chat_id")
+                chat_id = UUID(message_data.get("chat_id"))
                 content = message_data.get("content")
 
                 if chat_id and content:
