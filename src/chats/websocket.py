@@ -51,16 +51,23 @@ class ConnectionManager:
         self, chat_id: UUID, sender_id: UUID, message: dict, db: Session
     ):
         participants = get_chat_members(db, chat_id)
-        logger.info(f"Broadcasting to chat {chat_id} participants: {participants}")
+        logger.info(f"Active connections: {list(self.active_connections.keys())}")
+        logger.info(f"Chat participants: {participants}")
 
         for user_id in participants:
-            if user_id == sender_id:
+            if str(user_id) == str(sender_id):
                 continue
-            ws = self.active_connections.get(user_id)
+
+            ws = self.active_connections.get(
+                UUID(str(user_id))
+            ) or self.active_connections.get(user_id)
             if ws:
                 try:
                     await ws.send_json(message)
                     logger.info(f"✅ Sent to {user_id}")
+                    logger.info(
+                        f"Sending to user {user_id} (connected={user_id in self.active_connections})"
+                    )
                 except Exception as e:
                     logger.error(f"Error sending to user {user_id}: {e}")
             else:
