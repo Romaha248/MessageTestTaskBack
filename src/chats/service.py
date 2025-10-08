@@ -123,20 +123,19 @@ def create_message(db: Session, message_request: MessageRequest) -> MessageRespo
         )
 
 
-def get_chat_members(db: Session, chat_id: UUID) -> list:
+def get_user_chats(db: Session, user_id: UUID) -> list[Chats]:
     try:
-        chat = db.query(Chats).filter(Chats.id == chat_id).first()
+        chats = (
+            db.query(Chats)
+            .filter((Chats.user1_id == user_id) | (Chats.user2_id == user_id))
+            .all()
+        )
 
-        if not chat:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Chat not found.",
-            )
+        return chats
 
-        return [chat.user1_id, chat.user2_id]
     except Exception as e:
-        logging.error(f"Error retrieving chat : {e}")
+        logging.error(f"Error retrieving chats for user {user_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve chat.",
+            detail="Failed to retrieve chats.",
         )

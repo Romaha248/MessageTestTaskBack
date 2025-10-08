@@ -1,31 +1,36 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi.responses import HTMLResponse
 from typing import Dict, List
 import json
 
-router = APIRouter(prefix="/ws", tags=["WebSocket"])
+from sqlalchemy.orm import Session
+from src.database.dbcore import get_db
+from src.chats.service import (
+    get_user_chats,
+)  # This should return all chats for a user from DB
 
-# Example in-memory chat mapping (chat_id -> [user1, user2])
-# In real apps, you’d fetch this from DB
-CHAT_DB = {"chat1": ["user1", "user2"], "chat2": ["user2", "user3"]}
+router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
 
 class ConnectionManager:
     def __init__(self):
-        # Map user_id -> WebSocket
         self.active_connections: Dict[str, WebSocket] = {}
-        # Map chat_id -> list of user_ids
+        # chat_id -> list of user_ids
         self.active_chats: Dict[str, List[str]] = {}
 
-    async def connect(self, user_id: str, websocket: WebSocket):
+    async def connect(self, user_id: str, websocket: WebSocket, db: Session):
         await websocket.accept()
         self.active_connections[user_id] = websocket
         print(f"User {user_id} connected")
 
-        # Automatically subscribe the user to their chats
-        for chat_id, users in CHAT_DB.items():
-            if user_id in users:
-                if chat_id not in self.active_chats:
-                    self.active_chats[chat_id] = users
+        # Fetch all chats for this user from DB
+        user_chats = get_user_chats(db, user_id)  # Returns list of chat objects
+        for chat in user_chats:
+            chat_id = str(chat.id)
+            participants = [
+                str(u.id) for u in chat.users
+            ]  # assuming chat.users is a list of User objects
+            self.active_chats[chat_id] = participants
 
     def disconnect(self, user_id: str):
         if user_id in self.active_connections:
@@ -41,21 +46,22 @@ class ConnectionManager:
         users = self.active_chats.get(chat_id, [])
         for user_id in users:
             if user_id in self.active_connections:
-                # Send to both sender and recipient
                 await self.send_personal_message(json.dumps(message), user_id)
 
 
 manager = ConnectionManager()
 
 
-@router.websocket("/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    await manager.connect(user_id, websocket)
+@router.websocket("/ws/{user_id}")
+async def websocket_endpoint(
+    websocket: WebSocket, user_id: str, db: Session = Depends(get_db)
+):
+    await manager.connect(user_id, websocket, db)
     try:
         while True:
             data = await websocket.receive_text()
             try:
-                # Expected message: {"chat_id": "chat1", "content": "Hello"}
+                # Expected message: {"chat_id": "123", "content": "Hello"}
                 message_data = json.loads(data)
                 chat_id = message_data.get("chat_id")
                 content = message_data.get("content")
