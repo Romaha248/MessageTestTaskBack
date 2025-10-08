@@ -9,7 +9,7 @@ from starlette import status
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 import jwt
-from jwt import InvalidTokenError
+from jwt.exceptions import InvalidTokenError
 from uuid import UUID
 from typing import Annotated
 from fastapi import Depends, HTTPException, Response
