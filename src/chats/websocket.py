@@ -5,15 +5,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 from src.database.dbcore import get_db
-from src.chats.service import (
-    get_user_chats,
-)  # This should return all chats for a user from DB
+from src.chats.service import get_user_chats  # returns list of Chats objects
 
 router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
 
 class ConnectionManager:
     def __init__(self):
+        # user_id -> WebSocket
         self.active_connections: Dict[UUID, WebSocket] = {}
         # chat_id -> list of user_ids
         self.active_chats: Dict[UUID, List[UUID]] = {}
@@ -21,32 +20,41 @@ class ConnectionManager:
     async def connect(self, user_id: UUID, websocket: WebSocket, db: Session):
         await websocket.accept()
         self.active_connections[user_id] = websocket
-        print(f"User {user_id} connected")
+        print(f"✅ User {user_id} connected")
 
-        # Fetch all chats for this user from DB
-        user_chats = get_user_chats(db, user_id)  # Returns list of chat objects
+        # Register all chats this user belongs to
+        user_chats = get_user_chats(db, user_id)  # returns list of Chat rows
         for chat in user_chats:
-            participants = [
-                chat.user1,
-                chat.user2,
-            ]  # assuming chat.users is a list of User objects
+            participants = [chat.user1_id, chat.user2_id]
             self.active_chats[chat.id] = participants
+
+        print(f"Active chats now: {self.active_chats}")
 
     def disconnect(self, user_id: UUID):
         if user_id in self.active_connections:
             self.active_connections.pop(user_id)
-            print(f"User {user_id} disconnected")
+            print(f"❌ User {user_id} disconnected")
 
     async def send_personal_message(self, message: str, user_id: UUID):
-        websocket = self.active_connections.get(user_id)
-        if websocket:
-            await websocket.send_text(message)
+        ws = self.active_connections.get(user_id)
+        if ws:
+            await ws.send_text(message)
 
     async def send_message_to_chat(self, chat_id: UUID, message: dict, sender_id: UUID):
         users = self.active_chats.get(chat_id, [])
+        print(f"📤 Sending message to chat {chat_id}: {users}")
         for user_id in users:
-            if user_id in self.active_connections:
-                await self.send_personal_message(json.dumps(message), user_id)
+            ws = self.active_connections.get(user_id)
+            if ws:
+                await ws.send_text(
+                    json.dumps(
+                        {
+                            "chat_id": str(chat_id),
+                            "from": str(sender_id),
+                            "content": message["content"],
+                        }
+                    )
+                )
 
 
 manager = ConnectionManager()
@@ -59,25 +67,27 @@ async def websocket_endpoint(
     await manager.connect(user_id, websocket, db)
     try:
         while True:
-            data = await websocket.receive_text()
+            raw_data = await websocket.receive_text()
             try:
-                # Expected message: {"chat_id": "123", "content": "Hello"}
-                message_data = json.loads(data)
-                chat_id = UUID(message_data.get("chat_id"))
-                content = message_data.get("content")
+                data = json.loads(raw_data)
+                chat_id = UUID(data.get("chat_id"))
+                content = data.get("content")
 
-                if chat_id and content:
-                    message = {"from": user_id, "content": content}
-                    await manager.send_message_to_chat(
-                        chat_id, message, sender_id=user_id
-                    )
-                else:
+                if not chat_id or not content:
                     await manager.send_personal_message(
-                        "Invalid message format", user_id
+                        json.dumps({"error": "Invalid message format"}), user_id
                     )
+                    continue
+
+                # Echo message to all chat participants
+                await manager.send_message_to_chat(
+                    chat_id, {"content": content}, sender_id=user_id
+                )
 
             except json.JSONDecodeError:
-                await manager.send_personal_message("Invalid JSON format", user_id)
+                await manager.send_personal_message(
+                    json.dumps({"error": "Invalid JSON format"}), user_id
+                )
 
     except WebSocketDisconnect:
         manager.disconnect(user_id)
