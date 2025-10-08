@@ -11,7 +11,7 @@ templates = Jinja2Templates(directory="templates")
 
 Base.metadata.create_all(bind=engine)
 
-origins = ["http://localhost:5173"]
+origins = ["http://localhost:5173", "https://messagetesttask.netlify.app/"]
 
 app.add_middleware(
     CORSMiddleware,
