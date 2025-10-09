@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from typing import Dict, List
 import json
 from uuid import UUID
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 from src.database.dbcore import get_db
@@ -43,18 +44,18 @@ class ConnectionManager:
     async def send_message_to_chat(self, chat_id: UUID, message: dict, sender_id: UUID):
         users = self.active_chats.get(chat_id, [])
         print(f"📤 Sending message to chat {chat_id}: {users}")
+
+        payload = {
+            "chat_id": str(chat_id),
+            "sender_id": str(sender_id),
+            "content": message["content"],
+            "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
+        }
+
         for user_id in users:
             ws = self.active_connections.get(user_id)
             if ws:
-                await ws.send_text(
-                    json.dumps(
-                        {
-                            "chat_id": str(chat_id),
-                            "from": str(sender_id),
-                            "content": message["content"],
-                        }
-                    )
-                )
+                await ws.send_text(json.dumps(payload))
 
 
 manager = ConnectionManager()
