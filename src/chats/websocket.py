@@ -49,7 +49,7 @@ class ConnectionManager:
             "chat_id": str(chat_id),
             "sender_id": str(sender_id),
             "content": message["content"],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         for user_id in users:
