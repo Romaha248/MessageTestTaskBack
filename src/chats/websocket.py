@@ -97,6 +97,7 @@ async def websocket_endpoint(
                 data = json.loads(raw_data)
                 chat_id = UUID(data.get("chat_id"))
                 event_type = data.get("event")
+                content = data.get("content")
 
                 if not chat_id or not content:
                     await manager.send_personal_message(
