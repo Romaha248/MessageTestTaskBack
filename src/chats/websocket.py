@@ -52,7 +52,7 @@ class ConnectionManager:
             "chat_id": str(chat_id),
             "sender_id": str(sender_id),
             "content": message["content"],
-            "message_id": message_id,
+            "message_id": str(message_id),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
