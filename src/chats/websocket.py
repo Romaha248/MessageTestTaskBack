@@ -50,6 +50,7 @@ class ConnectionManager:
             "chat_id": str(chat_id),
             "sender_id": str(sender_id),
             "content": message["content"],
+            "message_id": str(message["id"]),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
