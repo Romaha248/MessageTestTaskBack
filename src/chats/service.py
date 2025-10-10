@@ -123,6 +123,31 @@ def create_message(db: Session, message_request: MessageRequest) -> MessageRespo
         )
 
 
+def delete_message_by_id(db: Session, id: UUID) -> UUID:
+    try:
+        message_to_delete = db.query(Messages).filter(Messages.id == id).first()
+
+        if not message_to_delete:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found",
+            )
+
+        chat_id = message_to_delete.chat_id
+        db.delete(message_to_delete)
+        db.commit()
+
+        return chat_id
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting message: {str(e)}",
+        )
+
+
 def get_user_chats(db: Session, user_id: UUID) -> list[Chats]:
     try:
         chats = (

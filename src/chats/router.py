@@ -7,9 +7,11 @@ from src.chats.service import (
     get_all_messages_for_chat,
     create_chat,
     create_message,
+    delete_message_by_id,
 )
 from src.auth.service import CurrentUser
 from src.chats.schemas import MessageRequest
+from src.chats.websocket import manager
 
 
 router = APIRouter(prefix="/chats", tags=["chats"])
@@ -52,3 +54,16 @@ async def create_user_message(
     current_user: CurrentUser,
 ):
     return create_message(db, message_request)
+
+
+@router.delete("/delete-message/{id}")
+async def delete_message(
+    db: DbSession,
+    current_user: CurrentUser,
+    id: str,
+):
+    chat_id = delete_message_by_id(db, id)
+
+    await manager.send_message_deleted(chat_id, id)
+
+    return {"success": True}
