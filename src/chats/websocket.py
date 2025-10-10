@@ -130,6 +130,7 @@ async def websocket_endpoint(
                         sender_id=user_id,
                         message_id=message_id,
                         db=db,
+                        content=content,
                     )
 
                 # 🗑️ Message delete event (optional if you want to handle delete via WS too)
