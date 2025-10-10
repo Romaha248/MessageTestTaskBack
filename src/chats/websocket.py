@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from src.database.dbcore import get_db
-from src.chats.service import get_user_chats  # returns list of Chats objects
+from src.chats.service import (
+    get_user_chats,
+    create_message,
+)  # returns list of Chats objects
+from src.chats.schemas import MessageRequest
 
 router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
@@ -42,10 +46,22 @@ class ConnectionManager:
             await ws.send_text(json.dumps(message))
 
     async def send_message_to_chat(
-        self, chat_id: UUID, message: dict, sender_id: UUID, message_id: UUID
+        self,
+        chat_id: UUID,
+        message: dict,
+        sender_id: UUID,
+        message_id: UUID,
+        db: Session,
+        content: str,
     ):
         users = self.active_chats.get(chat_id, [])
         print(f"📤 Sending message to chat {chat_id}: {users}")
+
+        message_data = MessageRequest(
+            chat_id=chat_id, sender_id=sender_id, content=content
+        )
+
+        create_message(db, message_data)
 
         payload = {
             "event": "message_new",
@@ -113,6 +129,7 @@ async def websocket_endpoint(
                         {"content": content},
                         sender_id=user_id,
                         message_id=message_id,
+                        db=db,
                     )
 
                 # 🗑️ Message delete event (optional if you want to handle delete via WS too)
