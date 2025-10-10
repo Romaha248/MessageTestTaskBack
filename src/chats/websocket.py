@@ -41,7 +41,9 @@ class ConnectionManager:
         if ws:
             await ws.send_text(json.dumps(message))
 
-    async def send_message_to_chat(self, chat_id: UUID, message: dict, sender_id: UUID):
+    async def send_message_to_chat(
+        self, chat_id: UUID, message: dict, sender_id: UUID, message_id: UUID
+    ):
         users = self.active_chats.get(chat_id, [])
         print(f"📤 Sending message to chat {chat_id}: {users}")
 
@@ -50,7 +52,7 @@ class ConnectionManager:
             "chat_id": str(chat_id),
             "sender_id": str(sender_id),
             "content": message["content"],
-            "message_id": str(message["id"]),
+            "message_id": message_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -94,7 +96,6 @@ async def websocket_endpoint(
             try:
                 data = json.loads(raw_data)
                 chat_id = UUID(data.get("chat_id"))
-                content = data.get("content")
                 event_type = data.get("event")
 
                 if not chat_id or not content:
@@ -105,8 +106,12 @@ async def websocket_endpoint(
 
                 if event_type == "message_new":
                     content = data.get("content")
+                    message_id = UUID(data.get("message_id"))
                     await manager.send_message_to_chat(
-                        chat_id, {"content": content}, sender_id=user_id
+                        chat_id,
+                        {"content": content},
+                        sender_id=user_id,
+                        message_id=message_id,
                     )
 
                 # 🗑️ Message delete event (optional if you want to handle delete via WS too)
